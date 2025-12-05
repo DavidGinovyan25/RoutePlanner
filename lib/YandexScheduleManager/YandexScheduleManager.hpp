@@ -5,13 +5,18 @@
 #include "RouteClasses.hpp"
 #include "HttpErrorHandler.hpp"
 
+struct RoutePoint {
+    std::string name;
+    std::string code;
+    RoutePoint(std::string name) : name(name) {}
+};
+
 using json = nlohmann::json;
 
 class YandexScheduleManager {
 public:
     std::expected<json, std::string> GetJsonFromUrl(std::string url);
-    bool FetchStations(RoutePoint& departure, RoutePoint& arrival);
-    bool FilterStationsByDate(RoutePoint& departure, std::string departure_date);
-    bool SearchRoutes(RoutePoint& departure, RoutePoint& arrival, std::string departure_date);
+    void FindPointsCode(RoutePoint& departure, RoutePoint& arrival);
+    void SearchRoutes(RoutePoint& departure, RoutePoint& arrival, std::string departure_date);
 };
 
