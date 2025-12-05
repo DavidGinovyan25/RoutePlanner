@@ -5,12 +5,6 @@
 #include "RouteClasses.hpp"
 #include "HttpErrorHandler.hpp"
 
-struct RoutePoint {
-    std::string name;
-    std::string code;
-    RoutePoint(std::string name) : name(name) {}
-};
-
 using json = nlohmann::json;
 
 class YandexScheduleManager {
