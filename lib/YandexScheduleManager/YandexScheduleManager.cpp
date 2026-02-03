@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "YandexScheduleManager.hpp"
 
 std::expected<json, std::string> YandexScheduleManager::GetJsonFromUrl(std::string url) {
@@ -11,26 +13,38 @@ std::expected<json, std::string> YandexScheduleManager::GetJsonFromUrl(std::stri
         return json::parse(r.text);
     } catch (const json::parse_error& e) {
         return std::unexpected(std::string("JSON parse error: ") + e.what());
-    } catch (...) {
-        return std::unexpected("Unknown JSON error");
     }
 }
 
 void YandexScheduleManager::FindPointsCode(RoutePoint& departure, RoutePoint& arrival) {
-    auto result = GetJsonFromUrl(
+    std::string url =
         "https://api.rasp.yandex-net.ru/v3.0/stations_list/"
         "?apikey=dbfeef6a-2419-43b8-83fd-66d8e630dbbd"
         "&lang=ru_RU"
-        "&format=json"
-    );
-    if (!result) {
-        std::cerr << "FetchStations: " + result.error() << std::endl;
-        return;
+        "&format=json";
+
+    json all_stations;
+    bool is_empty_cache = cache_manager.IsEmpty();
+    cache_manager.EvictFromFull();
+    if (cache_manager.HasCachedResponse(url)) {
+        all_stations = cache_manager.GetResponce(url).value();
+    } else {
+        auto result = GetJsonFromUrl(url);
+        if (!result) {
+            std::cerr << "FetchStations: " + result.error() << std::endl;
+            return;
+        }
+        all_stations = *result;
+        cache_manager.CacheResponse(url, all_stations);
     }
+    cache_manager.ExpireOldest();
+
     bool departure_flag = false;
     bool arrival_flag = false;
-    json all_stations = *result;
-    for (auto& country : all_stations["countries"]) {
+
+    auto all = (is_empty_cache) ? all_stations["countries"] : all_stations["json_answer"]["countries"];
+
+    for (auto& country : all) {
         for (auto& region : country["regions"]) {
             for (auto& settlement : region["settlements"]) {
 
@@ -43,12 +57,10 @@ void YandexScheduleManager::FindPointsCode(RoutePoint& departure, RoutePoint& ar
 
                 auto settlement_title = settlement["title"].get<std::string>();
                 auto settlement_code = settlement["codes"]["yandex_code"].get<std::string>();
-
                 auto compare_title = [&](bool& flag, const std::string& name, std::string& code){
                     if (!flag && name == settlement_title) {
                         code = settlement_code;
                         flag = true;}};
-
                 compare_title(departure_flag, departure.name, departure.code);
                 compare_title(arrival_flag, arrival.name, arrival.code);
                 if (departure_flag && arrival_flag)
@@ -71,22 +83,30 @@ void YandexScheduleManager::SearchRoutes(
             RoutePoint& arrival,
             std::string departure_date) {
 
-    auto result = GetJsonFromUrl(
+    std::string url =
         "https://api.rasp.yandex-net.ru/v3.0/search/"
         "?apikey=dbfeef6a-2419-43b8-83fd-66d8e630dbbd"
         "&from=" + departure.code +
         "&to=" + arrival.code +
         "&page=1"
         "&date=" + departure_date +
-        "&transfers=true"
-    );
-    if (!result) {
-        std::cerr << "SerachRoutes: " + result.error() << std::endl;
-        return;
+        "&transfers=true";
+
+    json searched_routes;
+    cache_manager.EvictFromFull();
+    if (cache_manager.HasCachedResponse(url)) {
+        searched_routes = cache_manager.GetResponce(url).value();
+    } else {
+        auto result = GetJsonFromUrl(url);
+        if (!result) {
+            std::cerr << "SearchRoutes: " + result.error() << std::endl;
+            return;
+        }
+        searched_routes = *result;
+        cache_manager.CacheResponse(url, searched_routes);
     }
-    json searched_routes = *result;
-    std::ofstream file("data.json");
-    file << searched_routes.dump(4);
+    cache_manager.ExpireOldest();
+
     int kMaxCountTransfers = 1;
     int kIndexNormalization = 2;
     for (auto& segments : searched_routes["segments"]) {
